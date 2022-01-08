@@ -1,0 +1,10 @@
+---
+title : "Compte Rendu TP"
+date : 2022-01-08
+output: "html_document"
+---
+
+```{r}
+students <- read.table("students.csv", sep = ";", header = TRUE)
+str(students)
+```
