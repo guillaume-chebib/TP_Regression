@@ -4,7 +4,243 @@ date : 2022-01-08
 output: "html_document"
 ---
 
-```{r}
+# Importation des librairies
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+knitr::opts_chunk$set(fig.width = 5)
+knitr::opts_chunk$set(fig.height = 3)
+set.seed(399L)
+```
+
+```{r lib}
+library(lares)
+library(caret)
+library(ggplot2)
+library(aod)
+library(GGally)
+library(broom.helpers)
+library(questionr)
+library(effects)
+library(DescTools)
+
+```
+
+# Importation des données
+
+```{r import}
 students <- read.table("students.csv", sep = ";", header = TRUE)
+```
+
+# Première approche des données
+
+On regarde à quoi ressemble les premières lignes du dataset et on constate qu'il y a 4 variables sur lesquelles on va tenter d'en apprendre plus
+```{r}
+head(students)
+```
+
+On constate que le dataset contient les données de 400 individus et les variables sont les suivantes :
+
+- `admit` variable permettant de voir si l'individu est admis (1) ou non (0)
+- `gre` variable représentant possiblement le résultat à un test passé par les individus du dataset
+- `gpa` variable représentant possiblement un indice de performance des résultats scolaires des individus
+- `rank` variable pouvant représenter le rang de l'établissement scolaire de l'individu
+```{r}
 str(students)
 ```
+
+Avec l'analyse descriptive, on constate que les variables `rank`et `admit` sont considérées comme des variables numériques, ce qui est incorrect car elles doivent être traitées comme des variables catégoriques
+```{r}
+summary(students)
+students$admit <- as.factor(students$admit)
+students$rank <- as.factor(students$rank)
+summary(students)
+```
+
+Ici on vérifie que les données ne comportent pas de valeurs manquantes pour chaque colonne (ce qui est bien le cas)
+```{r}
+sapply(students, function(x) sum(is.na(x)))
+```
+
+On vérifie que les groupes d'individus pour la variable cible sont relativement bien équilibrés. 
+Ici les effectifs reste relativement équilibrés mais il est possible que notre modèle soit affecté par la surreprésentation de 0 pour la variable `admit`
+```{r}
+table(students$admit)
+```
+
+On split les données en deux datasets afin de pouvoir tester la précision du modèle plus tard
+```{r}
+set.seed(125)
+ind <- createDataPartition(students$admit, p = 0.80, list = FALSE)
+students <- students[ind, ] #train
+students_test <- students[-ind, ] #test
+str(students)
+str(students_test)
+```
+
+## Analyse descriptive
+
+Dans un premier temps on peut étudier le lien entre les variables à l'aide boxplot (pour les variables quantitatives) et barplot (pour les categories).
+
+### gre
+
+On constate que les personnes admises ont obtenu un `gre` plus élevé que celles non admises. Il est donc possible à première vue que cette variable soit significative. Néanmoins cet écart n'est pas très élévé et la taille de l'effectif peut aussi impacter cette analyse.
+```{r}
+ggplot(students, aes(admit, gre, fill = admit)) +
+  geom_boxplot() +
+  theme_bw() +
+  xlab("Admit") +
+  ylab("gre") +
+  ggtitle("Admission en fonction du GRE")
+```
+
+### gpa
+
+Similairement au `gre`, on constate que les personnes admises ont obtenu un `gpa` plus élevé que celles non admises. Il est donc possible à première vue que cette variable soit significative. L'écart entre les deux boxplot est un peu plus grand que pour la variable `gre` mais il demeure assez petit.
+
+```{r}
+ggplot(students, aes(admit, gpa, fill = admit)) +
+  geom_boxplot() +
+  theme_bw() +
+  xlab("Admit") +
+  ylab("gpa") +
+  ggtitle("Admission en fonction du gpa")
+```
+
+### rank
+
+Comme `rank` est une variable catégorique, il est plus approprié d'utiliser un barplot.
+
+Ici on observe qu'il existe une tendance qui montre que plus le `rank` est proche de 1, plus les chances d'admissions sont grandes.
+
+```{r}
+ggplot(students, aes(rank, admit,fill = admit)) +
+  geom_col() +
+  xlab("rank") +
+  ylab("admit") +
+  ggtitle("Admission en fonction du rank")
+```
+
+Afin de savoir si réellement les variables `gre` `gpa` et `rank` ont un impact sur `admit`, on va mettre en place plusieurs modèles qui de manière générale permettent d'identifier des relations entre variables 
+
+## Regression Logistique
+ **Les lignes suivantes sont effectuées dans le cadre du modèle linéaire généralisé (GLM)**
+
+On effectue la regression logistique en laissant tous les predicteurs
+```{r}
+glm_fm1 <- glm(admit ~., data = students, family = "binomial")
+coef(glm_fm1)
+```
+
+A l'issue de la regression, on constate que toutes les variables sont statistiquement significatives sauf `gre` (p-value = 0.136 > 0.05) 
+
+De plus pour la variable `rank`, la valeur 1 est la valeur de reférence pour la regression (par exemple selon le modèle, la probabilité d'être admis en provenant d'un établissement de rang 3 est exp(-1.197652) = 0.302 fois celle d'un établissement de rang 1 )
+```{r}
+summary(glm_fm1)
+```
+
+En effectuant une selection backward et forward, on constate que toutes les variables sont gardées par l'algorithme donc `gre` semble bien avoir un impact sur `admit`.
+```{r}
+back_sel <- step(glm_fm1, direction = "backward")
+summary(back_sel)
+
+glm_fm2 <- glm(admit ~ 1, data = students, family = "binomial")
+back_sel2 <- step(glm_fm2, direction = "forward", scope = list(lower = glm_fm2, upper = ~ gpa+gre+rank))
+summary(back_sel2)
+
+
+```
+
+### Intervalle de confiance des coefficients 
+
+On peut representer les coefficients (+ intervalle de confiance) obtenus après la regression et après exponentiation.
+
+Ces coefficients montrent que le `gpa` augmente la probabilité d'admission (car > 1). A l'inverse un `rank` égal à 3 ou 4, diminue la probabilité par rapport à un `rank` égal à 1. Le `gre` ne semble pas impacter le modèle mais les différentes selections ci-dessus le conserve.
+```{r}
+
+odds.ratio(glm_fm1) # ou exp(cbind(coef(glm_fm1), confint(glm_fm1)))
+ggcoef_model(glm_fm1, exponentiate = TRUE)
+```
+
+
+### Effet de la variable `rank`
+
+Pour vérifier si la variable `rank` est vraiment significative, on peut mettre en place un test de Wald.
+Ce test permet de tester la nullité ou non du predicteur `rank`
+
+On definit :
+
+- H0: la valeur du paramètre `rank` dans le modèle est nulle
+- H1: la valeur du paramètre `rank` dans le modèle n'est pas nulle
+
+On obtient ensuite une p-value largement inférieure à 0.005, donc on peut rejeter H0 et la variable `rank` est significative
+```{r}
+wald.test(b = coef(glm_fm1), Sigma = vcov(glm_fm1), Terms = 4:6)
+
+```
+
+### Precision du modèle
+
+On utilise le dataset de test que l'on a construit tout à l'heure, afin de tester l'accuracy de notre modèle.
+
+On obtient une accuracy de 74,6%
+
+```{r}
+prediction <- predict(glm_fm1, students_test, type = "response")
+prediction <- ifelse(prediction >= 0.5, 1, 0)
+prediction <- as.factor(prediction)
+confusionMatrix(prediction, students_test$admit, positive = "1")
+```
+
+### Pouvoir discriminant du modèle 
+
+A partir de la courbe ROC, on calcule l'AUC. On obtient 64% ce qui peut paraitre un peu faible mais cela s'explique par la taille de l'échantillon (assez faible) et par le desequilibre des effectifs pour la variable `admit`
+
+```{r}
+tag <- as.numeric(students_test$admit)
+score <- as.numeric(prediction)
+mplot_roc(tag = tag, score = score)
+```
+
+### Ajustement du modèle 
+
+Comme pour les regressions linéaires, il est possible de tester la qualité d'ajustement du modèle grâce à des ratios. 
+
+Ici, on utilise le pseudo R² de McFadden qui permet de mesurer la qualité de l'ajustement (grace aux valeurs du log likelihood du modèle nul et du modèle ajusté pseudo R² = 1−LLmod/LL0).
+Un bon modèle possède un pseudo R2 de McFadden compris en 0,2 et 0,4. Ici on obtient une valeur plus faible ce qui montre que le modèle n'est pas forcement très ajuste (LLMod est presque à LL0 donc le modèle ajusté n'est pas vraiment meilleur que le modèle nul sur ce point) 
+
+```{r}
+PseudoR2(glm_fm1, which = "McFadden")
+```
+
+### Significativité du modèle
+
+On peut ensuite passer à l'étude de la significativité du modèle afin de voir si le modèle avec les predicteurs apporte plus d'informations que le modèle nul.
+
+Pour cela on met en place un test du chi-2 avec : 
+
+- H0: les deux modèles (nul et avec predicteurs) décrivent aussi bien le modèle
+- H1: le modèle avec predicteurs colle plus aux données
+
+On obtient ensuite une p-value largement inférieure à 0.005, donc on peut rejeter H0 et effectivement le modèle avec predicteurs est statistiquement significatif pour décrire la relation entre les données.
+```{r}
+with(glm_fm1, null.deviance - deviance) #Difference de deviance = chi-2
+with(glm_fm1, df.null - df.residual) #nb de DDL
+with(glm_fm1, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE)) #p-value
+```
+
+On peut aussi regarder les différents graphiques (QQ-Plot, Residual VS Fitted, etc...) mais sous GLM il est plus difficile d'intepreter ces graphiques que pour une regression linéaire.
+
+### Conclusion
+
+D'après le modèle que l'on a construit, toutes les variables ont un impact sur l'admission des élèves. Pour le `rank`, plus il est proche de 1, plus il est facile d'être admis. Le `gpa` possède aussi un impact important ce qui semble là aussi logique dans la mesure où cette variable rend compte des notes d'un élève durant son cursus.
+Cependant comme mentionné précédemment, la taille de l'échantillon et le fait que pseudo R2 et l'AUC soit assez faible amène à se poser des questions sur la pertinence du modèle 
+
+## Arbre de décision
+
+## Random Forest 
+
+## SVM ?
