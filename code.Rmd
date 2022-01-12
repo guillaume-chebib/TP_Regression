@@ -1,7 +1,9 @@
 ---
 title : "Compte Rendu TP"
 date : 2022-01-08
-output: "html_document"
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 # Importation des librairies
@@ -26,6 +28,12 @@ library(broom.helpers)
 library(questionr)
 library(effects)
 library(DescTools)
+library(tree)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+
+
 
 ```
 
@@ -186,7 +194,7 @@ wald.test(b = coef(glm_fm1), Sigma = vcov(glm_fm1), Terms = 4:6)
 
 On utilise le dataset de test que l'on a construit tout à l'heure, afin de tester l'accuracy de notre modèle.
 
-On obtient une accuracy de 74,6%
+On obtient une accuracy de 74,6% et une specificité de 95% ce qui est correct malgré la faible sensitivité (32%). Ce modèle a donc tendance a bien prédire les vrais négatifs (ceux non admis) mais il a des difficultés à bien trouver les vrais positifs.
 
 ```{r}
 prediction <- predict(glm_fm1, students_test, type = "response")
@@ -241,6 +249,74 @@ Cependant comme mentionné précédemment, la taille de l'échantillon et le fai
 
 ## Arbre de décision
 
+On va utiliser un modèle produisant un arbre de décision car les arbres peuvent être utiles pour des problèmes de classification.
+
+```{r}
+tree <- rpart(admit ~., data = students)
+```
+
+On constate que ici, la variable `gpa` semble être celle qui est la plus importante pour definir les chances d'admissions d'un étudiant, ensuite les variables `gre` et `rank` possederaient la même importance.
+```{r}
+summary(tree)
+rpart.plot(tree)
+```
+
+### Precision du modèle
+
+Pour évaluer la qualité du modèle, on peut s'attarder sur la matrice de confusion pour l'échantillon de test.
+On retrouve des valeurs similaires à celle de la regression logistique, ce qui montre que le modèle est plutôt pertinent même si il reste fortement perfectible.
+```{r}
+p <- predict(tree, students_test, type = "class")
+confusionMatrix(p, students_test$admit, positive = "1")
+```
+
+### Pouvoir discriminant du modèle 
+
+Pour l'AUC que l'on obtient à partir de la courbe ROC, on obtient une valeur supérieure à celle de la regression logistique. 
+```{r}
+p1 <- predict(tree, students_test, type="prob")
+p1 <- p1[,2]
+tag <- as.numeric(students_test$admit)
+p1 <- as.numeric(p1)
+mplot_roc(tag = tag, score = p1)
+
+```
+
+### Conclusion
+
+D'après ce modèle, le `gpa` est ce qui joue le plus dans les probabilités d'être admis. Ce qui confirme la tendance de la regression logistique.
+Les autres variables ont aussi une importance moindre. Néanmoins, ce modèle semble connaitre quelque limite comme pour la regression logistique.
+
 ## Random Forest 
 
-## SVM ?
+Pour finir, on va essayer de construire un modèle grâce à une technique d'apprentissage nommée Random Forest, cette technique est très efficace pour les problèmes de classification.
+```{r}
+rf_pima <- randomForest(admit ~., data = students, proximity=TRUE)
+print(rf_pima)
+```
+
+### Precision du modèle
+
+Ici, on constate que de manière générale cette méthode de classification semble plus performante et donc on peut possiblement en tirer plus de conclusions.
+En effet, la précision du modèle est nettement supérieure à celle des deux précédents (80%), de même la specificité est parfaite et la sensitivité est en augmentation même si elle reste assez faible.
+```{r}
+rf_probs <- predict(rf_pima, students_test)
+# bonne accuracy et specificité
+confusionMatrix(rf_probs, students_test$admit,positive="1")
+```
+
+### Importance des variables
+
+On constate que pour ce modèle, le `gpa` est la variable la plus importante puis suivent le `gre` et le `rank`. Ce qui confirme les tendances des modèles précédents.
+```{r}
+importance(rf_pima)
+par(mfrow = c(1, 2))
+varImpPlot(rf_pima, type = 2, main = "Importance des variables",col = 'black')
+plot(rf_pima, main = "Taux d'erreur par rapport au nombre d'arbres")
+```
+
+
+## Conclusion
+
+Les différents modèles affirment tous (pour l'échantillon donné) que les résultats au lycée ont un impact sur les probabilités d'être admis dans le supérieur. Chaque modèle possède des specificités sur l'importance des variables mais il semble de la `gpa` soit un bon indicateur suivi du `gpe` et du `rank`.
+Néanmoins comme évoqué précédemment, il faudrait avoir un échantillon plus important pour tirer des conclusions plus certaines.
