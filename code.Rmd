@@ -2,8 +2,8 @@
 title : "Compte Rendu TP"
 date : 2022-01-08
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 
 # Importation des librairies
@@ -217,7 +217,7 @@ mplot_roc(tag = tag, score = score)
 
 Comme pour les regressions linéaires, il est possible de tester la qualité d'ajustement du modèle grâce à des ratios. 
 
-Ici, on utilise le pseudo R² de McFadden qui permet de mesurer la qualité de l'ajustement (grace aux valeurs du log likelihood du modèle nul et du modèle ajusté pseudo R² = 1−LLmod/LL0).
+Ici, on utilise le pseudo R² de McFadden qui permet de mesurer la qualité de l'ajustement (grace aux valeurs du log likelihood du modèle nul et du modèle ajusté pseudo R² = 1-LLmod/LL0).
 Un bon modèle possède un pseudo R2 de McFadden compris en 0,2 et 0,4. Ici on obtient une valeur plus faible ce qui montre que le modèle n'est pas forcement très ajuste (LLMod est presque à LL0 donc le modèle ajusté n'est pas vraiment meilleur que le modèle nul sur ce point) 
 
 ```{r}
